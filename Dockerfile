@@ -1,9 +1,12 @@
 FROM ubuntu:24.04
 
+LABEL org.opencontainers.image.source=https://github.com/iwo-strzebonski/blightfall_server
+
 # Build arguments
 ARG DEBIAN_FRONTEND=noninteractive
 ARG EULA=false
 ARG MODPACK_VERSION
+ARG RCON_PASSWORD=zaq1@WSX
 
 # Update the system
 RUN apt-get update -y
@@ -38,38 +41,39 @@ RUN wget -O server.zip "https://servers.technicpack.net/Technic/servers/blightfa
 RUN unzip server.zip -d /usr/games/minecraft/server
 RUN rm server.zip
 
-# Download Web Map
-RUN wget https://github.com/GTNewHorizons/GTNH-Web-Map/releases/download/0.3.34/gtnh-web-map-0.3.34.jar
-
-# Download the server
-
-# Download mods and configs
-RUN unzip modpack.zip -d /usr/games/minecraft/server
-RUN rm modpack.zip
-
 RUN mv * /usr/games/minecraft/server
+
+# Download Additional Mods
+RUN wget "https://github.com/GTNewHorizons/GTNH-Web-Map/releases/download/0.3.34/gtnh-web-map-0.3.34.jar"
+RUN mv gtnh-web-map-0.3.34.jar /usr/games/minecraft/server/mods
+
+# Start server and prepare files and directories
+RUN mkdir -p /usr/games/minecraft/server/dynmap/renderdata/custom
+RUN wget -O DynmapAssets.zip "https://github.com/iwo-strzebonski/blightfall.server/releases/download/v${MODPACK_VERSION}/DynmapAssets-v${MODPACK_VERSION}.zip"
+RUN unzip DynmapAssets.zip -d /usr/games/minecraft/server/dynmap/renderdata/custom
+RUN rm DynmapAssets.zip
 
 # Configure the server
 WORKDIR /usr/games/minecraft/server
 
-RUN chmod +x ./run.sh
-RUN ./run.sh
+RUN rm start.bat
+RUN echo "#!/bin/bash\n" | cat - start.sh > temp && mv temp start.sh
 
-RUN sed -i "s/eula=false/eula=${EULA}/" eula.txt
+RUN chmod +x ./start.sh
+RUN ./start.sh
 
-RUN sed -i "s/# -Xmx4G/-Xmx4G/" user_jvm_args.txt
+RUN sed -i "/eula=false/c eula=${EULA}" eula.txt
 
-RUN echo "enable-command-block=true" >> server.properties
-RUN echo "enable-rcon=true" >> server.properties
+RUN sed -i "s/-Xmx3G/-Xmx6G -XX:+UseG1GC -Dsun.rmi.dgc.server.gcInterval=2147483646 -XX:+UnlockExperimentalVMOptions -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M/" start.sh
+
+RUN sed -i "/enable-query/c enable-query=true" server.properties
+RUN sed -i "/enable-rcon/c enable-rcon=true" server.properties
 RUN echo "rcon.port=25575" >> server.properties
-RUN echo "rcon.password=password" >> server.properties
-RUN echo "view-distance=12" >> server.properties
-RUN echo "difficulty=hard" >> server.properties
-RUN echo "enable-query=true" >> server.properties
-RUN echo "motd=Pondering the orb..." >> server.properties
-RUN echo "online-mode=false" >> server.properties
-
-# RUN sed -i "s/accept-download: false/accept-download: ${EULA}/" ./config/bluemap/core.conf
+RUN echo "rcon.password=${RCON_PASSWORD}" >> server.properties
+RUN sed -i "/motd/c motd=Pondering the orb..." server.properties
+RUN sed -i "/enable-command-block/c enable-command-block=true" server.properties
+RUN sed -i "/view-distance/c view-distance=12" server.properties
+RUN sed -i "/online-mode/c online-mode=true" server.properties
 
 # Clean up the system
 RUN apt-get clean
@@ -83,4 +87,4 @@ EXPOSE 25575
 EXPOSE 8123
 
 # Start the server
-ENTRYPOINT [ "./run.sh" ] 
+ENTRYPOINT [ "./start.sh" ] 
